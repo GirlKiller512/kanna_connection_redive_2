@@ -119,24 +119,24 @@ class BaseClient:
 
     async def load_index(self) -> LoadIndexResponse:
         response = await self.callapi(LoadIndexRequest())
-        return LoadIndexResponse.parse_obj(response)
+        return LoadIndexResponse.model_validate(response)
 
     async def home_index(self) -> HomeIndexResponse:
         response = await self.callapi(HomeIndexRequest())
-        return HomeIndexResponse.parse_obj(response)
+        return HomeIndexResponse.model_validate(response)
 
     async def clan_info(
         self,
         clan_id: int,
     ) -> ClanInfoResponse:
         response = await self.callapi(ClanInfoRequest(clan_id=clan_id))
-        return ClanInfoResponse.parse_obj(response)
+        return ClanInfoResponse.model_validate(response)
 
     async def clan_battle_top(self, clan_id: int, coin: int) -> ClanBattleTopResponse:
         response = await self.callapi(
             ClanBattleTopRequest(clan_id=clan_id, current_clan_battle_coin=coin)
         )
-        return ClanBattleTopResponse.parse_obj(response)
+        return ClanBattleTopResponse.model_validate(response)
 
     async def clan_battle_detail_info(
         self, clan_id: int, clan_battle_id: int, lap_num: int, order_num: int
@@ -149,7 +149,7 @@ class BaseClient:
                 order_num=order_num,
             )
         )
-        return ClanBattleReloadDetailInfoResponse.parse_obj(response)
+        return ClanBattleReloadDetailInfoResponse.model_validate(response)
 
     async def clan_battle_log(
         self, page: int, clan_battle_id: int
@@ -157,7 +157,7 @@ class BaseClient:
         response = await self.callapi(
             ClanBattleLogListRequest(page=page, clan_battle_id=clan_battle_id)
         )
-        return ClanBattleLogListResponse.parse_obj(response)
+        return ClanBattleLogListResponse.model_validate(response)
 
     async def time_line_report(
         self, target_viewer_id: int, clan_battle_id: int, battle_log_id: int
@@ -169,7 +169,7 @@ class BaseClient:
                 clan_battle_id=clan_battle_id,
             )
         )
-        return ClanBattleTimeLineReportResponse.parse_obj(response)
+        return ClanBattleTimeLineReportResponse.model_validate(response)
 
     async def support_unit_list_2(
         self, clan_id: int
@@ -177,41 +177,41 @@ class BaseClient:
         response = await self.callapi(
             ClanBattleSupportUnitList2Request(clan_id=clan_id)
         )
-        return ClanBattleSupportUnitList2Response.parse_obj(response)
+        return ClanBattleSupportUnitList2Response.model_validate(response)
 
     async def arena_info(self) -> ArenaInfoResponse:
         response = await self.callapi(ArenaInfoRequest())
-        return ArenaInfoResponse.parse_obj(response)
+        return ArenaInfoResponse.model_validate(response)
 
     async def arena_rank(self, page: int) -> ArenaRankingResponse:
         response = await self.callapi(ArenaRankingRequest(page=page))
-        return ArenaRankingResponse.parse_obj(response)
+        return ArenaRankingResponse.model_validate(response)
 
     async def grand_rank(self, page: int) -> GrandArenaRankingResponse:
         response = await self.callapi(GrandArenaRankingRequest(page=page))
-        return GrandArenaRankingResponse.parse_obj(response)
+        return GrandArenaRankingResponse.model_validate(response)
 
     async def grand_arena_info(self) -> GrandArenaInfoResponse:
         response = await self.callapi(GrandArenaInfoRequest())
-        return GrandArenaInfoResponse.parse_obj(response)
+        return GrandArenaInfoResponse.model_validate(response)
 
     async def grand_arena_history(self) -> GrandArenaHistoryResponse:
         response = await self.callapi(GrandArenaHistoryRequest())
-        return GrandArenaHistoryResponse.parse_obj(response)
+        return GrandArenaHistoryResponse.model_validate(response)
 
     async def grand_arena_history_detial(
         self, log_id: int
     ) -> GrandArenaHistoryDetailResponse:
         response = await self.callapi(GrandArenaHistoryDetailRequest(log_id=log_id))
-        return GrandArenaHistoryDetailResponse.parse_obj(response)
+        return GrandArenaHistoryDetailResponse.model_validate(response)
 
     async def profile_get(self, viewer_id: int) -> ProfileGetResponse:
         response = await self.callapi(ProfileGetRequest(target_viewer_id=viewer_id))
-        return ProfileGetResponse.parse_obj(response)
+        return ProfileGetResponse.model_validate(response)
 
     async def get_support_unit_setting(self) -> SupportUnitGetSettingResponse:
         response = await self.callapi(SupportUnitGetSettingRequest())
-        return SupportUnitGetSettingResponse.parse_obj(response)
+        return SupportUnitGetSettingResponse.model_validate(response)
 
     async def change_support_unit(
         self, support_type: int, position: int, action: int, unit_id: int
@@ -224,4 +224,4 @@ class BaseClient:
                 unit_id=unit_id,
             )
         )
-        return SupportUnitChangeSettingResponse.parse_obj(response)
+        return SupportUnitChangeSettingResponse.model_validate(response)
