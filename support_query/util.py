@@ -239,7 +239,7 @@ async def save_support_units(
             {
                 "group_id": gid,
                 "special_attribute": (
-                    letter2chinese(unit_data.bonus_param.dict())
+                    letter2chinese(unit_data.bonus_param.model_dump())
                     if unit_data.bonus_param
                     else "刷新者本人，不显示加成"
                 ),

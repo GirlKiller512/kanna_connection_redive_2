@@ -1,9 +1,7 @@
 from typing import List, Dict
 
-try:
-    from pydantic.v1 import BaseModel, Field
-except ImportError:
-    from pydantic import BaseModel, Field
+from pydantic import Field
+from .modelbase import GameBaseModel as BaseModel
 
 
 class SkillLevelInfo(BaseModel):
