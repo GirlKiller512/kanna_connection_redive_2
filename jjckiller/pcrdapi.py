@@ -70,7 +70,13 @@ async def callPcrdLocal(
 ) -> list:
     data = general_data(_def, page, region, sort)
     async with semaphore:
-        async with httpx.AsyncClient(proxies=proxies, timeout=5) as client:
+        mounts = {
+            scheme: httpx.AsyncHTTPTransport(proxy=proxy)
+            for scheme, proxy in (proxies or {}).items()
+        }
+        async with httpx.AsyncClient(
+            mounts=mounts, timeout=5, trust_env=proxies is None
+        ) as client:
             try:
                 res = await client.post(
                     "https://api.pcrdfans.com/x/v1/search",
