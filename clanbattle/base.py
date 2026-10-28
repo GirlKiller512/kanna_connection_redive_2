@@ -3,7 +3,7 @@ from typing import Dict, List, Union
 
 from hoshino.modules.priconne._pcr_data import CHARA_NAME
 
-from ...convert2img.convert2img import grid2imgb64
+from ...convert2img.convert2img import FONT, grid2imgb64
 from ..basedata import FilePath, stage_dict
 from ..client.common import InventoryInfo
 from ..database.models import RecordDao
@@ -22,6 +22,17 @@ except Exception:
     units2workid = units2workid
 
 run_path = str(FilePath.run_group.value)
+
+
+_report_font = FONT.font_variant()
+
+
+def _report_text_size(text: str) -> tuple:
+    left, _, right, bottom = _report_font.getbbox(text)
+    return right - left, bottom
+
+
+_report_font.getsize = _report_text_size
 
 
 def find_item(item_list: List[InventoryInfo], id: int) -> int:
@@ -153,7 +164,9 @@ async def get_cbreport(data: list, total_damage: int, total_score: int) -> str:
             ]
         )
     return grid2imgb64(
-        reply, ["排名", "昵称", "出刀次数", "造成伤害", "分数", "伤害占比", "分数占比"]
+        reply,
+        ["排名", "昵称", "出刀次数", "造成伤害", "分数", "伤害占比", "分数占比"],
+        font=_report_font,
     )
 
 
@@ -164,6 +177,7 @@ async def get_kpireport(data: list) -> str:
             for index, member in enumerate(data)
         ],
         ["排名", "昵称", "游戏id", "等效出刀", "补正"],
+        font=_report_font,
     )
 
 
@@ -189,6 +203,7 @@ async def get_plyerreport(data: List[RecordDao]) -> str:
     return grid2imgb64(
         reply[::-1],
         ["日期", "出刀次数", "造成伤害", "BOSS", "得分", "类型", "出刀编号"],
+        font=_report_font,
     )
 
 
