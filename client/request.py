@@ -1,10 +1,7 @@
 import random
 from typing import List
 
-try:
-    from pydantic.v1 import BaseModel
-except ImportError:
-    from pydantic import BaseModel
+from .modelbase import GameBaseModel as BaseModel
 
 
 class RequestBase(BaseModel):

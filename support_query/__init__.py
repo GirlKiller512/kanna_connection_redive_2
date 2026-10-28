@@ -204,7 +204,7 @@ async def export_box(bot: HoshinoBot, ev: CQEvent):
 
     _path = str(FilePath.data.value / "temp" / f"box_{qq_id}.json")
     with open(_path, "w") as f:
-        json.dump([support.dict() for support in supports], f)
+        json.dump([support.model_dump() for support in supports], f)
 
     await bot.call_action(
         action="upload_group_file",

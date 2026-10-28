@@ -188,16 +188,16 @@ class BCRClient(BaseClient):
                 key = BCRClient.createkey()
                 if self.viewer_id is not None:
                     request.viewer_id = (
-                        b64encode(self.encrypt(str(self.viewer_id), key))
+                        b64encode(self.encrypt(str(self.viewer_id), key)).decode("ascii")
                         if request.crypted
                         else str(self.viewer_id)
                     )
                 resp = await self.client.post(
                     api_root + request.url,
                     data=(
-                        self.pack(request.dict(by_alias=True), key)
+                        self.pack(request.model_dump(by_alias=True), key)
                         if request.crypted
-                        else request.json(by_alias=True).encode("utf8")
+                        else request.model_dump_json(by_alias=True).encode("utf8")
                     ),
                     headers=self.headers,
                 )
@@ -382,9 +382,9 @@ class TWClient(BaseClient):
 
         try:
             if self.viewer_id:
-                request.viewer_id = b64encode(self.encrypt(str(self.viewer_id), key))
+                request.viewer_id = b64encode(self.encrypt(str(self.viewer_id), key)).decode("ascii")
                 request.tw_server_id = self.platform
-            packed, crypted = self.pack(request.dict(by_alias=True), key)
+            packed, crypted = self.pack(request.model_dump(by_alias=True), key)
 
             self.headers["PARAM"] = sha1(
                 (
