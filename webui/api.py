@@ -2055,7 +2055,15 @@ async def home_info(token: CookieCache = Depends(verify_cookie)):
         pcr_user = pcr_user[0]
         response.name = pcr_user.name
     if groups := await pcr_sqla.get_member_group(user_id):
-        response.clan = [group.dict() for group in groups]
+        response.clan = [
+            ClanInfo(
+                group_id=group.group_id,
+                group_name=group.group_name,
+                priority=group.priority or 0,
+                role=role_name(group.priority or 0),
+            )
+            for group in groups
+        ]
     return response.dict()
 
 
