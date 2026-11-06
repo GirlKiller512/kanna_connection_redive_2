@@ -1,10 +1,10 @@
 import asyncio
 from collections import defaultdict
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import json
 import re
 import secrets
-import threading
 import time
 import traceback
 from types import SimpleNamespace
@@ -48,7 +48,7 @@ from ..support_query.util import (
 from ..setting import WebSetting
 from .util import *
 from .web_model import *
-from nonebot import logger, on_startup
+from nonebot import logger
 from nonebot import get_bot
 from hoshino import get_self_ids
 from hoshino.config import SUPERUSERS
@@ -2424,15 +2424,20 @@ async def correct_dao(correct: CorrectDaoInfo, token: CookieCache = Depends(veri
 app = api_app
 
 
-@on_startup
+@get_bot().server_app.while_serving
 async def kanna_web():
-    web = threading.Thread(
-        target=uvicorn.run,
-        kwargs={
-            "app": app,
-            "host": WebSetting.api_host.value,
-            "port": int(WebSetting.api_port.value),
-        },
-        daemon=True,
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app=app,
+            host=WebSetting.api_host.value,
+            port=int(WebSetting.api_port.value),
+            timeout_graceful_shutdown=5,
+        )
     )
-    web.start()
+    server.capture_signals = nullcontext
+    task = asyncio.create_task(server.serve())
+    try:
+        yield
+    finally:
+        server.should_exit = True
+        await task
