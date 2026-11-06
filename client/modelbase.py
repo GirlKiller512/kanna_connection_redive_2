@@ -1,8 +1,7 @@
-"""Adapt legacy protocol declarations to Pydantic 2 (based on autopcr PR #338)."""
 import types
 import typing
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic.fields import FieldInfo
 
 try:
@@ -52,4 +51,9 @@ class _ImplicitOptionalMeta(type(BaseModel)):
 
 
 class GameBaseModel(BaseModel, metaclass=_ImplicitOptionalMeta):
-    pass
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_list_as_object(cls, value: typing.Any) -> typing.Any:
+        if isinstance(value, list) and not value:
+            return {}
+        return value
