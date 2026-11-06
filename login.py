@@ -61,7 +61,7 @@ async def query(account: Account, is_force=False):
             )
             account.account = str(uid)
             account.password = access_key
-            await pcr_sqla.add_account(account.user_id, account.dict(exclude_none=True))
+            await pcr_sqla.add_account(account.user_id, account.model_dump(exclude_none=True))
             client = pcrclient(account.account, account.password, account.platform)
             await client.login()
     if await check_client(client):
@@ -125,7 +125,7 @@ async def bind_support(session: NoticeSession):
         if load_index := await check_client(client):
             account.viewer_id = load_index.user_info.viewer_id
             account.name = load_index.user_info.user_name
-            await pcr_sqla.add_account(qq_id, account.dict(exclude_none=True))
+            await pcr_sqla.add_account(qq_id, account.model_dump(exclude_none=True))
             await pcr_sqla.add_refresh(bili_account)
             await session.send("绑定成功")
         else:
@@ -157,7 +157,7 @@ async def bind_support_qu(session: NoticeSession):
         if load_index := await check_client(client):
             account.viewer_id = load_index.user_info.viewer_id
             account.name = load_index.user_info.user_name
-            await pcr_sqla.add_account(qq_id, account.dict(exclude_none=True))
+            await pcr_sqla.add_account(qq_id, account.model_dump(exclude_none=True))
             await session.send("绑定成功")
         else:
             await session.send("绑定失败，请检查你的获取的数据是否完整并重试")
@@ -185,7 +185,7 @@ async def bind_support_tw(session: NoticeSession):
         client = await query(account, True)
         if load_index := await check_client(client):
             account.name = load_index.user_info.user_name
-            await pcr_sqla.add_account(qq_id, account.dict(exclude_none=True))
+            await pcr_sqla.add_account(qq_id, account.model_dump(exclude_none=True))
             await session.send("绑定成功")
         else:
             await session.send("绑定失败，请检查你的获取的数据是否完整并重试")

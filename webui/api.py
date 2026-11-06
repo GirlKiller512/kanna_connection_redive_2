@@ -796,7 +796,7 @@ async def user_info(token: CookieCache = Depends(verify_cookie)):
         accounts=[account_info(account) for account in accounts],
         clan=clan_info,
         notification=await notification_setting_for(user_id),
-    ).dict()
+    ).model_dump()
 
 
 @api_app.post("/pcr-account")
@@ -826,7 +826,7 @@ async def bind_pcr_account(
     )
     if existing_account:
         account.allow_others = existing_account.allow_others or 0
-    await pcr_sqla.add_account(user_id, account.dict(exclude_none=True))
+    await pcr_sqla.add_account(user_id, account.model_dump(exclude_none=True))
     if refresh_account:
         await pcr_sqla.add_refresh(refresh_account)
     await publish_user_notification(
@@ -836,7 +836,7 @@ async def bind_pcr_account(
         f"已绑定 {account.name or account.viewer_id}（服务器 {account.platform}）",
         "/usercenter?tab=pcr",
     )
-    return account_info(account).dict()
+    return account_info(account).model_dump()
 
 
 @api_app.delete("/pcr-account/{platform}")
@@ -938,7 +938,7 @@ async def player_box(
         total=total,
         cache_name=first.owner_name if first else "",
         cache_viewer_id=first.owner_id if first else None,
-    ).dict()
+    ).model_dump()
 
 
 @api_app.post("/box/refresh")
@@ -1059,7 +1059,7 @@ async def group_supports(
         page=page,
         page_size=page_size,
         total=total,
-    ).dict()
+    ).model_dump()
 
 
 @api_app.post("/groups/{group_id}/supports/refresh")
@@ -1133,7 +1133,7 @@ async def arena_sources(token: CookieCache = Depends(verify_cookie)):
         sources.values(),
         key=lambda item: (not item.own, not item.monitored, item.platform, item.source_user_id),
     )
-    return ArenaSourcesResponse(sources=ordered).dict()
+    return ArenaSourcesResponse(sources=ordered).model_dump()
 
 
 @api_app.post("/arena/monitor/start")
@@ -1243,7 +1243,7 @@ async def arena_overview(
         source_user_id=source_user_id,
         monitored=True,
         can_manage=source_user_id == viewer_user_id,
-    ).dict()
+    ).model_dump()
 
 
 @api_app.put("/arena/settings")
@@ -1320,7 +1320,7 @@ async def arena_rankings(
         source_user_id=source_user_id,
         group=arena.grand_group if arena_type == "grand" else arena.jjc_group,
         players=players,
-    ).dict()
+    ).model_dump()
 
 
 @api_app.get("/arena/players/{viewer_id}")
@@ -1352,12 +1352,12 @@ async def arena_player_profile(
         arena_group=int(user.arena_group or 0),
         grand_arena_rank=int(user.grand_arena_rank or 0),
         grand_arena_group=int(user.grand_arena_group or 0),
-    ).dict()
+    ).model_dump()
 
 
 @api_app.get("/notification-settings")
 async def get_notification_settings(token: CookieCache = Depends(verify_cookie)):
-    return (await notification_setting_for(int(token.user_id))).dict()
+    return (await notification_setting_for(int(token.user_id))).model_dump()
 
 
 @api_app.put("/notification-settings")
@@ -1386,7 +1386,7 @@ async def set_notification_settings(
         quiet_end=form.quiet_end,
     )
     await pcr_sqla.web_set_notification_setting(setting)
-    return (await notification_setting_for(user_id)).dict()
+    return (await notification_setting_for(user_id)).model_dump()
 
 
 @api_app.get("/notifications/stream")
@@ -1490,7 +1490,7 @@ async def notification_inbox(token: CookieCache = Depends(verify_cookie)):
             for event in events
         ],
         unread=sum(not event.read for event in events),
-    ).dict()
+    ).model_dump()
 
 
 @api_app.patch("/notifications/{event_id}/read")
@@ -1535,7 +1535,7 @@ async def admin_users(
     summaries = []
     for user in valid_users:
         summaries.append(await summarize(user))
-    return AdminUsersResponse(users=summaries).dict()
+    return AdminUsersResponse(users=summaries).model_dump()
 
 
 @api_app.patch("/admin/users/{account}")
@@ -1666,7 +1666,7 @@ async def accessible_groups(
             )
         )
     return {
-        "groups": [item.dict() for item in response],
+        "groups": [item.model_dump() for item in response],
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -1756,7 +1756,7 @@ async def clan_management(
         members=member_rows,
         can_manage_roles=operator_level >= ROLE_MANAGER,
         can_operate=operator_level >= ROLE_FOREMAN,
-    ).dict()
+    ).model_dump()
 
 
 @api_app.post("/groups/{group_id}/members/sync")
@@ -1884,7 +1884,7 @@ async def clan_operations(
         subscribe_count=len(await pcr_sqla.get_notice(NoticeType.subscribe.value, group_id)),
         apply_count=len(await pcr_sqla.get_notice(NoticeType.apply.value, group_id)),
         tree_count=len(await pcr_sqla.get_notice(NoticeType.tree.value, group_id)),
-    ).dict()
+    ).model_dump()
 
 
 @api_app.post("/groups/{group_id}/monitor/start")
@@ -2035,7 +2035,7 @@ async def clan_analytics(
     group_id: int, token: CookieCache = Depends(verify_cookie)
 ):
     await require_group_role(group_id, token)
-    return (await build_clan_analytics(group_id)).dict()
+    return (await build_clan_analytics(group_id)).model_dump()
 
 
 @api_app.get("/home")
@@ -2064,7 +2064,7 @@ async def home_info(token: CookieCache = Depends(verify_cookie)):
             )
             for group in groups
         ]
-    return response.dict()
+    return response.model_dump()
 
 
 @api_app.get("/{group_id}/dashboard")
@@ -2124,7 +2124,7 @@ async def dashboard_info(
         for tree in trees:
             response.boss[tree.boss - 1].tree += 1
     response.day_num = await pcr_sqla.get_clan_day(group_id)
-    return response.dict()
+    return response.model_dump()
 
 
 @api_app.get("/{group_id}/notice")
@@ -2144,7 +2144,7 @@ async def clan_notice(
         response.apply = apply
     if tree := await pcr_sqla.get_notice(NoticeType.tree.value, group_id):
         response.tree = tree
-    return response.dict()
+    return response.model_dump()
 
 
 @api_app.get("/{group_id}/report")
@@ -2211,7 +2211,7 @@ async def clan_report(
                     )
                 )
         response.me = response.me[::-1]
-    return response.dict()
+    return response.model_dump()
 
 
 @api_app.post("/set_notice")

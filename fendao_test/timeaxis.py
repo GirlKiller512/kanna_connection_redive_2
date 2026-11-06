@@ -84,7 +84,7 @@ class ClanBattleWorkManage:
                     "https://www.caimogu.cc/gzlj/data?date=&lang=zh-cn",
                     headers={"x-requested-with": "XMLHttpRequest"},
                 )
-                data = HomeWorkData.parse_raw(res.content)
+                data = HomeWorkData.model_validate_json(res.content)
             for work in data.data:
                 hw_id = work.id
                 stage = str(work.stage)
