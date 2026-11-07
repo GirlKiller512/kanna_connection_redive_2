@@ -27,17 +27,20 @@ class ClanBattleWorkManage:
 
     def get_work_by_id(self, work_id: str) -> HomeWorkDictItem:
         work_id = work_id.upper()
-        return self.clanbattle_work[work_id[-3]][letter2stageid(work_id[0])][work_id]
+        return self.filter_by_boss(work_id[-3])[letter2stageid(work_id[0])][work_id]
 
-    def filter_by_boss(self, boss: int) -> Dict[str, Dict[str, HomeWorkDictItem]]:
-        return self.clanbattle_work[boss]
+    def filter_by_boss(self, boss: Union[int, str]) -> Dict[str, Dict[str, HomeWorkDictItem]]:
+        index = int(boss) - 1
+        if 0 <= index < len(self.clanbattle_work):
+            return self.clanbattle_work[index]
+        return {}
 
     def filter_by_stage(
         self, stage: str, show_dict: Dict[str, Dict[str, HomeWorkDictItem]]
     ) -> Dict[str, HomeWorkDictItem]:
-        if stage.isdigit():
+        if not stage.isdigit():
             stage = letter2stageid(stage)
-        return show_dict[stage]
+        return show_dict.get(stage, {})
 
     def filter_by_type(
         self, dao_type: str, show_list: Dict[str, HomeWorkDictItem]
@@ -66,7 +69,7 @@ class ClanBattleWorkManage:
         return self.get_work_by_id(work_id)[work_id]["unit"]
 
     def get_boss_work(
-        self, stage: str, boss: int, dao_type="TWS"
+        self, stage: str, boss: Union[int, str], dao_type="TWS"
     ) -> Dict[str, HomeWorkDictItem]:  # type,T自动，W尾刀，S手动
 
         return self.filter_by_type(
@@ -94,13 +97,13 @@ class ClanBattleWorkManage:
                 clanbattle_work[boss_id][stage] = {
                     bosswork.sn: {
                         "info": bosswork.info,
-                        "unit_id": bosswork.unit,
+                        "unit": bosswork.unit,
                         "damage": bosswork.damage,
-                        "video_link": bosswork.video,
+                        "video_link": [video.model_dump(mode="json") for video in bosswork.video],
                     }
                     for bosswork in work.homework
                 }
-            if not clanbattle_work[0][1]:
+            if not any(works for boss in clanbattle_work for works in boss.values()):
                 return False
             write_config(clanbattlework_path, clanbattle_work)
             self.clanbattle_work = clanbattle_work

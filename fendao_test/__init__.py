@@ -116,7 +116,7 @@ async def query_timeaxis(bot: HoshinoBot, ev: CQEvent):
             )
         )
 
-        for video in result["video"]:
+        for video in result["video_link"]:
             text = video["text"]
             url = video["url"]
             note = video["note"]
@@ -147,16 +147,19 @@ async def query_timeaxis(bot: HoshinoBot, ev: CQEvent):
     msg += f"{stage}面{type2chinese(dao_type)}作业"
 
     for single in boss:
-        msg += f"\n{single}王作业：\n" + MessageSegment.image(
+        msg += f"\n{single}王作业：\n"
+        works = clanbattle_work.get_boss_work(stage, single, dao_type)
+        if not works:
+            msg += "暂无作业"
+            continue
+        msg += MessageSegment.image(
             pic2b64(
                 await team2pic(
-                    [(work_id, str(work["damage"]), work["unit"])
-                     for work_id, work in
-                     clanbattle_work.get_boss_work(
-                         stage, single, dao_type).items()
-                     ],
-                    max_query=MAX_SINGLE_BOSS if len(
-                        boss) > 1 else MAX_QUERY,
+                    [
+                        (work_id, str(work["damage"]), work["unit"])
+                        for work_id, work in works.items()
+                    ],
+                    max_query=MAX_SINGLE_BOSS if len(boss) > 1 else MAX_QUERY,
                 )
             )
         )
