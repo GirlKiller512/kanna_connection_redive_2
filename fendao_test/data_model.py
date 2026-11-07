@@ -1,11 +1,19 @@
-from pydantic import BaseModel
-from typing import List
-from typing import TypedDict
+from typing import Any, List, TypedDict
+
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class DetailItem(BaseModel):
     name: str
     value: int
+
+    @model_validator(mode="before")
+    @classmethod
+    def unpack_pair(cls, value: Any) -> Any:
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            name, number = value
+            return {"name": name, "value": number}
+        return value
 
 
 class VideoItem(BaseModel):
@@ -13,6 +21,16 @@ class VideoItem(BaseModel):
     url: str
     image: List[str]
     note: str
+
+    @field_validator("image", mode="before")
+    @classmethod
+    def extract_image_urls(cls, value: Any) -> Any:
+        if not isinstance(value, (list, tuple)):
+            return value
+        return [
+            image.get("url", image) if isinstance(image, dict) else image
+            for image in value
+        ]
 
 
 class HomeworkItem(BaseModel):
@@ -60,4 +78,4 @@ class HomeWorkDictItem(TypedDict):
     unit: List[int]
     damage: int
     info: str
-    video: List[VideoDictItem]
+    video_link: List[VideoDictItem]
