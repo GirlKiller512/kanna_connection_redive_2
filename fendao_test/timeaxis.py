@@ -8,7 +8,6 @@ from nonebot import on_startup
 from .data_model import HomeWorkData, HomeWorkDictItem
 from ..basedata import FilePath, stage_dict
 from ..util.tools import load_config, write_config
-from ..util.auto_boss import clan_boss_info
 from hoshino.modules.priconne._pcr_data import CHARA_NAME
 
 clanbattlework_path = FilePath.homework_cache.value
@@ -99,6 +98,7 @@ class ClanBattleWorkManage:
                         "info": bosswork.info,
                         "unit": bosswork.unit,
                         "damage": bosswork.damage,
+                        "rate": work.rate,
                         "video_link": [video.model_dump(mode="json") for video in bosswork.video],
                     }
                     for bosswork in work.homework
@@ -148,15 +148,19 @@ def letter2stageid(stage_letter: str):
 class BossWorkDetailData:
     unit: List[int]
     damage: int
-    score: int
+    score: float
     work_id: str
 
 
 @dataclass
 class TeamData:
     damage: int
-    score: int
+    score: float
     teamid_list: List[str]
+
+
+class MissingHomeworkRateError(ValueError):
+    pass
 
 
 class TimaAxis:
@@ -295,50 +299,51 @@ class TimaAxis:
             if work_id not in self.black_work
         }
 
-    def get_work_list(self, works, boss, stage):
-        works = self.filter_black_work_id(works)
-        return self.arrange_fen_dao(
-            [
-                BossWorkDetailData(
-                    works[work_id]["unit"],
-                    works[work_id]["damage"],
-                    works[work_id]["damage"]
-                    * clan_boss_info.get_boss_rate_by_stage(int(stage), boss),
-                    work_id,
-                )
-                for work_id in works
-                if self.check_black_unit(works[work_id]["unit"])
-            ],
-            self.set_arrange,
-        )
+    def get_work_list(self, works: Dict[str, HomeWorkDictItem]):
+        result = []
+        for work_id, work in self.filter_black_work_id(works).items():
+            units = work["unit"]
+            if not self.check_black_unit(units):
+                continue
+
+            damage = work["damage"]
+            score = 0.0
+            if self.set_arrange == "毛分":
+                rate = work.get("rate")
+                if not isinstance(rate, (int, float)) or not 0 < rate < float("inf"):
+                    raise MissingHomeworkRateError(
+                        f"作业 {work_id} 缺少有效倍率，请发送“更新作业网缓存”后重试"
+                    )
+                score = damage * rate
+            result.append(BossWorkDetailData(units, damage, score, work_id))
+        return self.arrange_fen_dao(result, self.set_arrange)
 
     async def fen_dao(self) -> Union[List[TeamData], str]:
-        # 默认不计算尾刀
-        if (i := len(self.set_stage)) == 1:
+        if len(self.set_stage) == 1:
             stage_list = [letter2stageid(self.set_stage)] * 3
-        elif i != len(self.all_boss):
+        elif len(self.set_stage) != len(self.all_boss):
             return "输入错误"
         else:
             stage_list = [letter2stageid(letter) for letter in self.set_stage]
 
-        if self.all_boss:
-            work_list = [
-                self.get_work_list(
-                    clanbattle_work.get_boss_work(stage, boss, self.set_type),
-                    boss,
-                    stage,
-                )
-                for stage, boss in zip(stage_list, self.all_boss)
-            ]
-        else:
-            stage = stage_list[0]
-            temp = []
-            for boss in range(1, 6):
-                temp += self.get_work_list(
-                    clanbattle_work.get_boss_work(stage, boss, self.set_type),
-                    boss,
-                    stage,
-                )
-
-            work_list = [temp, temp, temp]
+        try:
+            if self.all_boss:
+                work_list = [
+                    self.get_work_list(
+                        clanbattle_work.get_boss_work(stage, boss, self.set_type)
+                    )
+                    for stage, boss in zip(stage_list, self.all_boss)
+                ]
+            else:
+                stage = stage_list[0]
+                temp = []
+                for boss in range(1, 6):
+                    temp.extend(
+                        self.get_work_list(
+                            clanbattle_work.get_boss_work(stage, boss, self.set_type)
+                        )
+                    )
+                work_list = [temp, temp, temp]
+        except MissingHomeworkRateError as error:
+            return str(error)
         return self.get_result(work_list)
