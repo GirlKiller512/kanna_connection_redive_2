@@ -276,7 +276,7 @@ class TimaAxis:
         result = self.arrange_fen_dao(res, arrange=self.set_arrange)
         return result[:MAX_RESULT]
 
-    async def check_black_unit(self, units):
+    def check_black_unit(self, units):
         return len(set(units) | set(self.black_units)) == len(units + self.black_units)
 
     def arrange_fen_dao(
@@ -312,32 +312,30 @@ class TimaAxis:
             self.set_arrange,
         )
 
-    async def fen_dao(self) -> List[TeamData]:
+    async def fen_dao(self) -> Union[List[TeamData], str]:
         # 默认不计算尾刀
         if (i := len(self.set_stage)) == 1:
-            stage = letter2stageid(self.set_stage)
-            stage_list = [stage, stage, stage]
-        elif i < len(self.all_boss):
+            stage_list = [letter2stageid(self.set_stage)] * 3
+        elif i != len(self.all_boss):
             return "输入错误"
         else:
-            stage_list = [letter2stageid(stages) for stages in self.set_stage]
+            stage_list = [letter2stageid(letter) for letter in self.set_stage]
 
-        if len(self.all_boss) > 0:
+        if self.all_boss:
             work_list = [
                 self.get_work_list(
-                    clanbattle_work.get_boss_work(
-                        stage_list[index], boss, self.set_type
-                    ),
+                    clanbattle_work.get_boss_work(stage, boss, self.set_type),
                     boss,
                     stage,
                 )
-                for index, boss in enumerate(self.all_boss)
+                for stage, boss in zip(stage_list, self.all_boss)
             ]
         else:
+            stage = stage_list[0]
             temp = []
             for boss in range(1, 6):
                 temp += self.get_work_list(
-                    clanbattle_work.get_boss_work(stage_list[0], boss, self.set_type),
+                    clanbattle_work.get_boss_work(stage, boss, self.set_type),
                     boss,
                     stage,
                 )

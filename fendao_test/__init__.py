@@ -1,20 +1,22 @@
 import re
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-import os
 from nonebot import MessageSegment
 from .create_img import team2pic
 from ..util.text2img import image_draw
-from ..util.tools import load_config
-from ..basedata import stage_dict
+from ..util.tools import load_config, write_config
+from ..basedata import FilePath, stage_dict
 from .timeaxis import (
     MAX_QUERY,
     type2chinese,
     clanbattle_work,
-    MAX_SINGLE_BOSS
+    MAX_SINGLE_BOSS,
+    TimaAxis,
 )
 from hoshino.typing import CQEvent, HoshinoBot
 from hoshino import Service
-from hoshino.util import pic2b64
+from hoshino.util import filt_message, pic2b64
 from hoshino.modules.priconne import chara
 from hoshino.modules.priconne._pcr_data import CHARA_NAME
 
@@ -87,6 +89,8 @@ BOSS：1-5，对应公会战的一至五王，可以‘123’或者‘12’,也�
 =============================================
 数据来源于: https://www.caimogu.cc/gzlj.html
 """.strip()
+
+user_path = FilePath.data.value / "fendao" / "user"
 
 sv = Service("分刀", enable_on_default=True, help_=f"{helpText1}\n\n{helpText2}")
 
@@ -169,85 +173,147 @@ async def query_timeaxis(bot: HoshinoBot, ev: CQEvent):
 
 @sv.on_prefix("分刀")
 async def fen_dao(bot, ev):
-    content: str = ev.message.extract_plain_text().strip()
-    args = content.split()
+    args = ev.message.extract_plain_text().split()
     stage = "A"
     dao_type = "ST"
     arrange = "毛分"
-    boss = "12345"
+    bosses = []
 
     for arg in args:
-        if arg.upper()[0] in stage_dict:
-            if len(arg) > 3:
-                arg = arg[:3]
-            stage = arg
-        elif arg in ["毛分", "毛伤"]:
+        token = arg.upper()
+        if arg in ("毛分", "毛伤"):
             arrange = arg
-        elif "".join(sorted(arg.upper())) in "STW":  # 是否包含，先排序(忽略顺序)
-            dao_type = arg
-        elif arg.isdigit():
-            boss = "".join(
-                [number for number in arg if 1 <= int(number) <= 5])[:3]
+        elif all(kind in "STW" for kind in token):
+            dao_type = token
+        elif len(token) <= 3 and all(letter in stage_dict for letter in token):
+            stage = token
+        elif len(token) <= 3 and all(number in "12345" for number in token):
+            bosses = [int(number) for number in token]
         else:
             await bot.send(ev, "出现无效参数，爬爬")
             return
 
-    msg = f"{stage}面"
+    if len(stage) > 1 and len(stage) != len(bosses):
+        await bot.send(ev, "跨阶段分刀时，阶段和王编号需要一一对应")
+        return
 
     black_info = ""
-
     black_list = [
-        await load_config(os.path.join(user_path, f"{ev.user_id}", f"{name}"))
-        for name in ["unit_loss.json", "unit_black.json", "work_black.json"]
+        _read_blacklist(user_path / str(ev.user_id) / name)
+        for name in ("unit_loss.json", "unit_black.json", "work_black.json")
     ]
 
     if black_list[2]:
         black_info += f"作业黑名单：{str(black_list[2])[1:-1]}\n"
 
     if black_list[1]:
-        black_info += (
-            f"角色黑名单：{str([CHARA_NAME[id][0] for id in black_list[1]])[1:-1]}\n"
-        )
+        names = [CHARA_NAME.get(unit, (str(unit),))[0] for unit in black_list[1]]
+        black_info += f"角色黑名单：{str(names)[1:-1]}\n"
 
     if black_list[0]:
-        black_info += (
-            f"角色缺失：{str([CHARA_NAME[id][0] for id in black_list[0]])[1:-1]}\n"
-        )
+        names = [CHARA_NAME.get(unit, (str(unit),))[0] for unit in black_list[0]]
+        black_info += f"角色缺失：{str(names)[1:-1]}\n"
 
     if black_info:
         await bot.send(ev, black_info)
 
-    boss = () if len(boss) > 3 else boss
-    msg += f"{boss}王分刀参考" if boss else "分刀参考"
-    dao = fendao(stage, arrange, set_type=dao_type, all_boss=boss)
+    dao = TimaAxis(stage, arrange, set_type=dao_type, all_boss=bosses)
     dao.set_black(*black_list)
     result = await dao.fen_dao()
-
-    if len(result) == 0:
+    if isinstance(result, str):
+        await bot.send(ev, result)
+        return
+    if not result:
         await bot.send(ev, "无分刀作业，请检查角色设置和或更新作业网缓存")
         return
 
-    for i, answer in enumerate(result):
+    teams = []
+    for answer in result:
+        entries = []
+        for work_id in answer.teamid_list:
+            work = clanbattle_work.get_work_by_id(work_id)
+            entries.append((work_id, str(work["damage"]), work["unit"]))
+        teams.append(entries)
+
+    boss_label = "".join(map(str, bosses))
+    msg = f"{stage}面{boss_label}王分刀参考" if bosses else f"{stage}面分刀参考"
+    for i, (answer, entries) in enumerate(zip(result, teams), start=1):
         total = (
-            f"伤害总计：{answer[0]}W"
+            f"伤害总计：{answer.damage}W"
             if arrange == "毛伤"
-            else f"分数总计：{answer[1]}W"
+            else f"分数总计：{answer.score}W"
         )
-        msg += f"\n第{i+1}种方案，{total}\n{MessageSegment.image(pic2b64(await team2pic(await workid2unitid(answer[2]), borrow=True, unit_loss=black_list[0])))}"
+        picture = await team2pic(entries, borrow=True, unit_loss=black_list[0])
+        msg += f"\n第{i}种方案，{total}\n{MessageSegment.image(pic2b64(picture))}"
 
     await bot.send(ev, msg)
+
+
+def get_json_name(category, label):
+    if category == "作业":
+        return "work_black.json"
+    if label == "缺失":
+        return "unit_loss.json"
+    return "unit_black.json"
+
+
+def _read_blacklist(filename):
+    values = load_config(filename)
+    return values if isinstance(values, list) else []
+
+
+async def _update_blacklist(bot, ev, filename, items, *, delete):
+    values = _read_blacklist(filename)
+    if delete:
+        values = [value for value in values if value not in items] if items else []
+    else:
+        for item in items:
+            if item not in values:
+                values.append(item)
+
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=filename.parent) as staging:
+        updated = Path(staging) / filename.name
+        write_config(updated, values)
+        if filename.exists():
+            updated.chmod(filename.stat().st_mode & 0o777)
+        updated.replace(filename)
+    await bot.send(ev, "删除成功" if delete else "设置成功")
+
+
+async def set_unit_list(bot, ev, filename, delete=False):
+    text = re.sub(r"[?？，,_]", "", ev.message.extract_plain_text())
+    units, unknown = chara.roster.parse_team(text)
+    if unknown:
+        _, name, score = chara.guess_id(unknown)
+        if score < 70 and not units:
+            return
+        unknown = filt_message(unknown)
+        message = f'无法识别"{unknown}"'
+        if score >= 70:
+            message += f" 您说的有{score}%可能是{name}"
+        await bot.send(ev, message)
+        return
+    if not units:
+        await bot.send(ev, "请后面加角色名", at_sender=True)
+        return
+    await _update_blacklist(bot, ev, filename, units, delete=delete)
+
+
+async def set_work_list(bot, ev, filename, delete=False):
+    work_id = ev.message.extract_plain_text().strip().upper()
+    if not work_id:
+        await bot.send(ev, "请后面加作业id", at_sender=True)
+        return
+    await _update_blacklist(bot, ev, filename, [work_id], delete=delete)
 
 
 @sv.on_prefix("添加角色缺失")
 @sv.on_prefix("添加作业黑名单")
 @sv.on_prefix("添加角色黑名单")
 async def set_black(bot, ev):
-    name1: str = ev.prefix[2:4]
-    name2: str = ev.prefix[4:6]
-    user_id = ev.user_id
-    os.makedirs(os.path.join(user_path, f"{user_id}"), exist_ok=True)
-    filename = os.path.join(
-        user_path, f"{user_id}", get_json_name(name1, name2))
+    name1, name2 = ev.prefix[2:4], ev.prefix[4:6]
+    filename = user_path / str(ev.user_id) / get_json_name(name1, name2)
     if name1 == "作业":
         await set_work_list(bot, ev, filename)
     else:
@@ -258,41 +324,29 @@ async def set_black(bot, ev):
 @sv.on_prefix("删除角色缺失")
 @sv.on_prefix("删除作业黑名单")
 async def delete_black(bot, ev):
-    name1: str = ev.prefix[2:4]
-    name2: str = ev.prefix[4:6]
-    if ev.message.extract_plain_text():
-        filename = os.path.join(
-            user_path, f"{ev.user_id}", get_json_name(name1, name2))
-        if name1 == "作业":
-            await set_work_list(bot, ev, filename, delete=True)
-        else:
-            await set_unit_list(bot, ev, filename, delete=True)
-    else:
+    name1, name2 = ev.prefix[2:4], ev.prefix[4:6]
+    if not ev.message.extract_plain_text().strip():
         await bot.send(ev, "请后面加作业id/角色名", at_sender=True)
-
-
-@sv.on_rex(r"^清空(角色|作业)(缺失|黑名单)$")
-async def clean_black(bot: HoshinoBot, ev: CQEvent):
-    match = ev["match"]
-    filename = os.path.join(
-        user_path, f"{ev.user_id}", get_json_name(
-            match.group(1), match.group(2))
-    )
-    if match.group(1) == "作业":
+        return
+    filename = user_path / str(ev.user_id) / get_json_name(name1, name2)
+    if name1 == "作业":
         await set_work_list(bot, ev, filename, delete=True)
     else:
         await set_unit_list(bot, ev, filename, delete=True)
 
 
+@sv.on_rex(r"^清空(角色|作业)(缺失|黑名单)$")
+async def clean_black(bot: HoshinoBot, ev: CQEvent):
+    match = ev["match"]
+    filename = user_path / str(ev.user_id) / get_json_name(match.group(1), match.group(2))
+    await _update_blacklist(bot, ev, filename, [], delete=True)
+
+
 @sv.on_rex(r"^查看(角色|作业)(缺失|黑名单)$")
 async def query_black(bot, ev):
     match = ev["match"]
-    if config := await load_config(
-        os.path.join(
-            user_path, f"{ev.user_id}", get_json_name(
-                match.group(1), match.group(2))
-        )
-    ):
+    filename = user_path / str(ev.user_id) / get_json_name(match.group(1), match.group(2))
+    if config := _read_blacklist(filename):
         await bot.send(ev, str(config)[1:-1])
     else:
         await bot.send(ev, f"你没有设置过{match.group(1)}{match.group(2)}")
