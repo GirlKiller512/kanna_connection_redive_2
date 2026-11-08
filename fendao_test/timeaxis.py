@@ -270,12 +270,17 @@ class TimaAxis:
 
     def get_result(self, work_list: List[List[BossWorkDetailData]]):
         res = []
+        seen = set()
         for perm in itertools.product(*work_list):
             data = self.check_available(perm)
             if data[0]:
+                _, team = data
+                key = tuple(team.teamid_list)
+                if key in seen:
+                    continue
                 if len(res) >= MAX_CALCULATE_LIMIT:
                     break
-                _, team = data
+                seen.add(key)
                 res.append(team)
         result = self.arrange_fen_dao(res, arrange=self.set_arrange)
         return result[:MAX_RESULT]
