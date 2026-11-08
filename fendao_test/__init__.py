@@ -352,8 +352,8 @@ async def query_black(bot, ev):
         await bot.send(ev, f"你没有设置过{match.group(1)}{match.group(2)}")
 
 
-@sv.on_fullmatch("更新作业网缓存")
 @sv.scheduled_job("interval", minutes=60)
+@sv.on_fullmatch("更新作业网缓存")
 async def renew_worklist(bot: HoshinoBot = None, ev: CQEvent = None):
     check = await clanbattle_work.get_clanbattlework()
     if bot and ev:
