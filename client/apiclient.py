@@ -295,7 +295,7 @@ class BCRClient(BaseClient):
         response = SourceIniGetMaintenanceStatusResponse(**manifest)
         if response.maintenance_message:
             time = re.search(
-                "\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d", manifest["maintenance_message"]
+                r"\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d", manifest["maintenance_message"]
             ).group()
             raise MaintenanceError(time)
         self.headers["MANIFEST-VER"] = response.manifest_ver
