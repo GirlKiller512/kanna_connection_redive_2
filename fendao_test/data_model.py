@@ -1,6 +1,7 @@
 from typing import Any, List, TypedDict
 
 from pydantic import BaseModel, field_validator, model_validator
+from typing_extensions import NotRequired
 
 
 class DetailItem(BaseModel):
@@ -79,3 +80,4 @@ class HomeWorkDictItem(TypedDict):
     damage: int
     info: str
     video_link: List[VideoDictItem]
+    rate: NotRequired[float]
