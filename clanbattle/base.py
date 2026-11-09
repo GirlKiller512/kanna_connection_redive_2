@@ -143,6 +143,10 @@ def cuidao(data: list) -> str:
     return "今天所有刀都出啦。下班下班。"
 
 
+def format_report_rate(value: int, total: int) -> str:
+    return f"{value / total * 100:.2f}%" if total else "0.00%"
+
+
 async def get_cbreport(data: list, total_damage: int, total_score: int) -> str:
     reply = []
     for index, member in enumerate(data):
@@ -150,8 +154,8 @@ async def get_cbreport(data: list, total_damage: int, total_score: int) -> str:
         knife = member[2]
         damage = member[3]
         score = member[4]
-        rate_damage = f"{member[3]/total_damage*100:.2f}%"
-        rate_score = f"{member[4]/total_score*100:.2f}%"
+        rate_damage = format_report_rate(damage, total_damage)
+        rate_score = format_report_rate(score, total_score)
         reply.append(
             [
                 str(index + 1),
