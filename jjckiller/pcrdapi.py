@@ -81,7 +81,7 @@ async def callPcrdLocal(
                 res = await client.post(
                     "https://api.pcrdfans.com/x/v1/search",
                     headers=headers,
-                    data=_dumps(data).encode("utf8"),
+                    content=_dumps(data).encode("utf8"),
                 )
                 result = res.json()
                 if code := result["code"]:
@@ -90,7 +90,7 @@ async def callPcrdLocal(
                         res = await client.post(
                             "https://api.pcrdfans.com/x/v1/search",
                             headers=headers,
-                            data=_dumps(data).encode("utf8"),
+                            content=_dumps(data).encode("utf8"),
                         )
                         result = res.json()
                     if result["code"]:
