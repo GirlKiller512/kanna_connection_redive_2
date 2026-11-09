@@ -1,12 +1,18 @@
+import asyncio
 import re
+from heapq import nlargest
+from itertools import combinations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from nonebot import MessageSegment
 from .create_img import team2pic
+from ..basedata import FilePath, ItemID, stage_dict
+from ..clanbattle.base import find_item
+from ..login import query
+from ..util.decorator import check_account_qqid
 from ..util.text2img import image_draw
 from ..util.tools import load_config, write_config
-from ..basedata import FilePath, stage_dict
 from .timeaxis import (
     MAX_QUERY,
     type2chinese,
@@ -363,184 +369,82 @@ async def renew_worklist(bot: HoshinoBot = None, ev: CQEvent = None):
         await bot.send(ev, "更新作业网缓存成功" if check else "刷新失败，可能是网络问题或者作业网此时没作业")
 
 
-async def get_proper_team(knife: int, box: set = None, boss=[1, 2, 3, 4, 5], stage=4, axistype=[1, 2]) -> str:
-    '''
-    剩余刀数 
-    可用box set(int)
-    筛选：boss(int|list[int]) 周目(int|list[int]) 轴类型（手动/auto/尾刀）(int|list[int])
-    '''
+async def get_proper_team(knife: int, box=None, boss=(1, 2, 3, 4, 5), stage=4, axistype=(1, 2)) -> str:
+    bosses = (boss,) if isinstance(boss, int) else boss
+    stages = (stage,) if isinstance(stage, int) else stage
+    types = (axistype,) if isinstance(axistype, int) else axistype
+    dao_type = "".join("STW"[kind - 1] for kind in types)
+    works = {}
+    for phase in stages:
+        for target in bosses:
+            works.update(clanbattle_work.get_boss_work(str(phase), target, dao_type))
+    if not works:
+        return "无推荐配刀"
 
-    # 简要流程（不考虑补偿刀尾刀）
-    if box == None:
-        box = set([i for i in range(1000, 2000)])
-    box = set(box)
+    solver = TimaAxis(stage_dict[stages[0]], "毛伤")
+    solver.set_black()
+    if box is not None:
+        solver.box = set(box)
+    candidates = solver.get_work_list(works)
+    checked = (solver.check_available(team) for team in combinations(candidates, knife))
+    valid_teams = (result[1] for result in checked if result[0])
+    teams = await asyncio.to_thread(nlargest, 6, valid_teams, key=lambda team: team.damage)
+    if not teams:
+        return "无推荐配刀"
 
-    from .clanbattle_timeaxis import get_timeaxis
-    battle_array = await get_timeaxis(boss, stage, axistype)
-    # [
-    #     {
-    #         "sn": "A107",
-    #         "units": [int],
-    #         "damage": int,
-    #         "videos": [
-    #             {"text":str, "url":str, "note":str},
-    #             {...}
-    #         ]
-    #     },
-    #     {
-    #         ...
-    #     }
-    # ]
+    plans = []
+    for team in teams:
+        lines = []
+        for work_id in team.teamid_list:
+            work = works[work_id]
+            names = " ".join(chara.fromid(unit).name for unit in work["unit"])
+            lines.append(f'{work_id:<5s} {work["damage"]:5d}w {names}')
+        plans.append("\n".join(lines))
 
-    def same_chara(x, y):
-        return 10 - len(x | y)
-
-    def have_chara(x):
-        return len(x & box)
-
-    def have_84(x, y):
-        return have_chara(x) >= 8 and have_chara(y) >= 4
-
-    proper_team = []
-
-    battle_array_set = []
-    for homework in battle_array:
-        battle_array_set.append(set(homework["units"]))
-
-    cnt = len(battle_array)
-
-    if knife == 1:  # 剩1刀没出
-        for i in range(cnt):
-            x = battle_array_set[i]
-            if have_chara(x) >= 4:  # 五个角色里有4个可用即可
-                proper_team.append([i])
-    elif knife == 2:  # 剩2刀没出
-        for i in range(cnt - 1):
-            x = battle_array_set[i]
-            for j in range(i + 1, cnt):
-                y = battle_array_set[j]
-                if same_chara(x, y) == 0:  # 如果没有重复
-                    if have_chara(x) >= 4 and have_chara(y) >= 4:  # 这两队中每队的5个角色要有4个
-                        proper_team.append([i, j])
-                elif same_chara(x, y) <= 2:  # 有1~2个重复
-                    if have_chara(x | y) >= 8:  # 这两队中出现的角色要有8个
-                        proper_team.append([i, j])
-
-    elif knife == 3:  # 剩3刀没出
-        for i in range(cnt - 2):
-            x = battle_array_set[i]
-            for j in range(i + 1, cnt - 1):
-                y = battle_array_set[j]
-                for k in range(j + 1, cnt):
-                    z = battle_array_set[k]
-
-                    jxy, jyz, jxz = same_chara(x, y), same_chara(
-                        y, z), same_chara(x, z)  # 获取两两之间重复角色
-                    if jxy < 3 and jyz < 3 and jxz < 3 and jxy + jxz + jyz <= 3:
-                        # print("无冲，接下来判断当前账号是否可用")
-                        if jxy + jxz + jyz == 3:  # 210/111
-                            if set(x | y | z).issubset(box):  # 三队中出现的所有角色都要有
-                                proper_team.append([i, j, k])
-                        elif (jxy == 0) + (jxz == 0) + (jyz == 0) == 2:  # 200/100
-                            # 重复的两队有8个角色 另一队有4个
-                            if jxy and have_84(x | y, z) or jxz and have_84(x | z, y) or jyz and have_84(y | z, x):
-                                proper_team.append([i, j, k])
-                        elif jxy + jxz + jyz == 0:  # 000
-                            if have_chara(x) >= 4 and have_chara(y) >= 4 and have_chara(z) >= 4:  # 每队有4个
-                                proper_team.append([i, j, k])
-                        else:  # 110:
-                            if have_chara(x | y | z) >= 12:  # 三队中出现的所有角色（13个）要有任意12个
-                                proper_team.append([i, j, k])
-
-    import heapq
-    proper_team = heapq.nlargest(6, proper_team, lambda x: sum(
-        [battle_array[y]["damage"] for y in x]))
-    # proper_team = sorted(proper_team, key=lambda x: sum([battle_array[y]["damage"] for y in x]), reverse=True)
-
-    proper_team_str = []
-    sn2videostr = {}
-    for team_indexs in proper_team:  # [i,j]
-        team_str = []
-        for team_index in team_indexs:  # i
-            team_info = battle_array[team_index]  # {}
-            team_str.append(
-                f'{team_info["sn"]:<5s} {team_info["damage"]:5d}w {" ".join([chara.fromid(unit).name for unit in team_info["units"]])}')
-            # for video in team_info["videos"]:
-            #     team_str.append(f'{video["text"]} {video["url"]} {video["note"]}')
-            # if team_info["sn"] not in sn2videostr:
-            #     videostr = []
-            #     for video in team_info["videos"]:
-            #         videostr.append(f'{video["text"]} {video["url"]} {video["note"]}')
-            #     sn2videostr[team_info["sn"]] = '\n'.join(videostr)
-        proper_team_str.append('\n'.join(team_str))
-
-    # proper_team_videostr = []
-    # for sn, videostr in sn2videostr.items():
-    #     if '\n' in videostr:
-    #         proper_team_videostr.append(f'{sn:<5s}\n{videostr}')
-    #     else:
-    #         proper_team_videostr.append(f'{sn:<5s} {videostr}')
-    #
-    # team_outp = '\n\n'.join(proper_team_str)
-    # video_outp = '\n'.join(proper_team_videostr)
-    # with open(join(curpath, "timeline_status_temp.txt"), "w", encoding='utf-8') as fp:
-    #     print(f'自动配刀：\n{team_outp}\n\n阵容信息：\n{video_outp}', file=fp)
-    # return team_outp, video_outp
-
-    team_outp = ('\n\n' if (knife > 1) else "\n").join(proper_team_str)
-
-    # with open(join(curpath, "timeline_status_temp.txt"), "w", encoding='utf-8') as fp:
-    #    print(f'自动配刀：\n{team_outp}', file=fp)
-
-    if len(team_outp):
-        return f'自动配刀：\n{team_outp}\n\n发送“查轴[轴号]”以获取链接等详细信息。例：查轴{battle_array[proper_team[0][0]]["sn"]}'
-    else:
-        return '无推荐配刀'
+    separator = "\n\n" if knife > 1 else "\n"
+    example = teams[0].teamid_list[0]
+    return f'自动配刀：\n{separator.join(plans)}\n\n发送“查轴[轴号]”以获取链接等详细信息。例：查轴{example}'
 
 
-async def _get_clan_battle_info(account_info, boss, stage, worktype) -> str:
+async def _get_clan_battle_info(account, boss, stage, worktype) -> str:
     try:
-        info = await query.get_clan_battle_info(account_info)
-    except Exception as e:
-        return f'Fail. {e}'
+        client = await query(account)
+        home = await client.home_index()
+        clan_id = home.user_clan.clan_id if home.user_clan else None
+        if not clan_id:
+            return "该账号尚未加入公会"
+        index = await client.load_index()
+        coin = find_item(index.item_list, ItemID.clanbattle_coin.value)
+        info = await client.clan_battle_top(clan_id, coin)
+    except Exception:
+        sv.logger.exception("自动配刀读取公会战信息失败")
+        return "读取公会战信息失败，请稍后重试"
+
+    if info.point is None or info.remaining_count is None:
+        return "当前无法获取公会战体力或出刀次数"
+
+    total = info.point // 300
+    used = {unit_id // 100 for unit_id in info.used_unit or []}
+    used_names = " ".join(chara.fromid(unit_id).name for unit_id in sorted(used))
+    lines = [
+        f"今日体力点：{info.point}/900",
+        f"未出整刀数：{info.remaining_count}刀/共{total}刀",
+        f"已用角色：{used_names or '无'}",
+    ]
+    if info.using_unit:
+        names = " ".join(chara.fromid(unit_id // 100).name for unit_id in info.using_unit)
+        seconds = info.carry_over_time if info.carry_over_time is not None else "未知"
+        lines.extend([f"补偿刀：{seconds}秒", f"补偿角色：{names}"])
     else:
-        s = []
-        s.append(f'今日体力点：{info.get("point", "unknown")}/900')
-        s.append(
-            f'未出整刀数：{info.get("remaining_count", "unknown")}刀/共{info.get("point", 900)//300}刀'
-        )
+        lines.append("补偿刀：无")
 
-        knife_left = info.get("remaining_count", 0) + 3 - \
-            info.get("point", 900) // 300
-        used_unit_id = info.get("used_unit", [])
+    knife_left = max(0, min(3, info.remaining_count + 3 - total))
+    if knife_left:
+        owned = {unit.id // 100 for unit in index.unit_list or [] if unit.id}
+        lines.append(await get_proper_team(knife_left, owned - used, boss, stage, worktype))
+        lines.append("发送“自动配刀帮助”获取详细筛选方式")
+    return "\n".join(lines)
 
-        used_unit_str = " ".join(
-            [chara.fromid(int(unit) // 100).name for unit in used_unit_id])
-        s.append(f'已用角色：{used_unit_str if used_unit_str != "" else "无"}')
-
-        using_unit_id = info.get("using_unit", [])
-        using_unit_str = " ".join(
-            [chara.fromid(int(unit) // 100).name for unit in using_unit_id])
-        if using_unit_str == "":
-            s.append(f'补偿刀：无')
-        else:
-            s.append(f'补偿刀：{info.get("carry_over_time", "unknown")}秒')
-            s.append(f'补偿角色：{using_unit_str}')
-
-        s = '\n'.join(s)
-        if knife_left:
-            from ...autobox import _get_box_id_list_from_pcrid
-            user_box = set(_get_box_id_list_from_pcrid(account_info["pcrid"]))
-            # print(f'该账号拥有的角色\n{user_box}')
-            used_box = set(int(uid) // 100 for uid in used_unit_id)
-            # print(f'今日出刀已用角色 {used_unit_str}\n{used_box}')
-            avail_box = user_box - used_box
-            # print(f'该账号当前实际可用角色\n{avail_box}')
-            if len(avail_box):
-                team_str = await get_proper_team(knife_left, avail_box, boss, stage, worktype)
-                return f'{s}\n{team_str}\n发送“自动配刀帮助”获取详细筛选方式'
-
-        return s
 
 team_match_auto_help_str = '''
 自动获取该账号今日当前可用角色（会上号）。
@@ -566,27 +470,22 @@ async def team_match_auto_help(bot, ev):
     await bot.send(ev, team_match_auto_help_str)
 
 
-async def get_team_match_params(bot, ev):
-    msg = ev.message.extract_plain_text().strip().split()
+def get_team_match_params(args):
+    if len(args) > 3:
+        raise ValueError("筛选参数过多")
+    filters = ["12345", "4", "12"]
+    filters[:len(args)] = args
+    values = []
+    for token, allowed in zip(filters, ("12345", "1234", "123")):
+        if not token or any(number not in allowed for number in token):
+            raise ValueError("无效筛选参数")
+        values.append(sorted({int(number) for number in token}))
+    boss, stage, worktype = values
+    stages = "".join(stage_dict[phase] for phase in stage)
+    bosses = "".join(map(str, boss))
+    types = "/".join(("手动", "auto", "尾")[kind - 1] for kind in worktype)
+    return boss, stage, worktype, f"筛选{stages}面{bosses}号boss的{types}刀"
 
-    def preprocess(st: str, mi: int, ma: int):
-        lis = list(sorted(list(set([int(i) if i.isdigit() and int(
-            i) >= mi and int(i) <= ma else 0 for i in st]) - set([0]))))
-        return lis if len(lis) else [i for i in range(mi, ma + 1)]
-    boss = [1, 2, 3, 4, 5]
-    stage = [4]
-    worktype = [1, 2]
-    stagename = {1: 'A', 2: 'B', 3: 'C', 4: 'D'}
-    worktypename = {1: "手动", 2: "auto", 3: "尾"}
-    if len(msg) >= 3:
-        boss = preprocess(msg[-3], 1, 5)
-        stage = preprocess(msg[-2], 1, 4)
-        worktype = preprocess(msg[-1], 1, 3)
-    # elif len(msg) == 2:
-    #     await bot.send(ev, f"参数数量错误！\n\n{team_match_auto_help_str}")
-    #     raise RuntimeError("Number of Params Error")
-    ss = f'筛选{"".join([stagename[k] for k in stage])}面{"".join([str(l) for l in boss])}号boss的{"/".join([worktypename[j] for j in worktype])}刀'
-    return boss, stage, worktype, ss
 
 team_match_help_str = '''
 根据指定给出可选配刀组合，按伤害降序排序，输出前6套。
@@ -606,27 +505,27 @@ async def team_match_help(bot, ev):
     await bot.send(ev, team_match_help_str)
 
 
-@sv.on_prefix(("配刀"))
+@sv.on_prefix("配刀")
 async def get_team_match(bot, ev):
+    args = ev.message.extract_plain_text().split()
     try:
-        knife = max(
-            1, min(3, int(ev.message.extract_plain_text().strip().split()[0])))
-    except:
-        await bot.send(ev, f'参数错误！\n\n{team_match_help_str}')
-    boss, stage, worktype, ss = await get_team_match_params(bot, ev)
-    ss = ss.strip() + f' {knife}刀组合'
-    ret = await get_proper_team(knife, None, boss, stage, worktype)
-    await bot.send(ev, f'{ss}\n{ret}\n发送“配刀帮助”获取详细筛选方式')
-
-
-@sv.on_prefix(("#自动配刀"))
-# 自动配刀<@人> 不ata默认自己
-async def get_team_match_auto(bot, ev):
-    try:
-        account_info, qqid, nam = await get_target_account(bot, ev, True)
-    except:
+        knife = max(1, min(3, int(args[0])))
+        boss, stage, worktype, summary = get_team_match_params(args[1:])
+    except (IndexError, ValueError):
+        await bot.send(ev, f"参数错误！\n\n{team_match_help_str}")
         return
+    result = await get_proper_team(knife, None, boss, stage, worktype)
+    await bot.send(ev, f'{summary} {knife}刀组合\n{result}\n发送“配刀帮助”获取详细筛选方式')
 
-    boss, stage, worktype, ss = await get_team_match_params(bot, ev)
-    clan_battle_info = await _get_clan_battle_info(account_info, boss, stage, worktype)
-    await bot.send(ev, f'{nam}\n{ss}\n{clan_battle_info}')
+
+@sv.on_prefix("#自动配刀", "# 自动配刀")
+@check_account_qqid
+async def get_team_match_auto(bot, ev, account, qq_id):
+    args = ev.message.extract_plain_text().split()
+    try:
+        boss, stage, worktype, summary = get_team_match_params(args)
+    except ValueError:
+        await bot.send(ev, f"参数错误！\n\n{team_match_auto_help_str}")
+        return
+    result = await _get_clan_battle_info(account, boss, stage, worktype)
+    await bot.send(ev, f"{account.name or '已绑定账号'}\n{summary}\n{result}")
