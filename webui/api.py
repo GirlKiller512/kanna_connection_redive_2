@@ -26,7 +26,7 @@ from ..clanbattle import (
 )
 from ..clanbattle.model import ClanBattle, ClanbattleItem, PrioritizedQueryItem
 from ..util.auto_boss import clan_boss_info
-from ..clanbattle.base import clanbattle_report, cuidao
+from ..clanbattle.base import clanbattle_report, cuidao, format_report_rate
 from ..database.dal import CookieCache, SLDao, pcr_sqla
 from ..database.models import (
     Account,
@@ -2168,8 +2168,8 @@ async def clan_report(
                 damage=member[3],
                 score=member[4],
                 dao=member[2],
-                damage_rate=f"{member[3]/all_damage*100:.2f}%",
-                score_rate=f"{member[4]/all_score*100:.2f}%",
+                damage_rate=format_report_rate(member[3], all_damage),
+                score_rate=format_report_rate(member[4], all_score),
             )
             for member in players
         ]
