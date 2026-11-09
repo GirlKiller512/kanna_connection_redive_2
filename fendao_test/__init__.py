@@ -238,11 +238,11 @@ async def fen_dao(bot, ev):
     boss_label = "".join(map(str, bosses))
     msg = f"{stage}面{boss_label}王分刀参考" if bosses else f"{stage}面分刀参考"
     for i, (answer, entries) in enumerate(zip(result, teams), start=1):
-        total = (
-            f"伤害总计：{answer.damage}W"
-            if arrange == "毛伤"
-            else f"分数总计：{answer.score}W"
-        )
+        if arrange == "毛伤":
+            total = f"伤害总计：{answer.damage}W"
+        else:
+            score = f"{answer.score:.2f}".rstrip("0").rstrip(".")
+            total = f"分数总计：{score}W"
         picture = await team2pic(entries, borrow=True, unit_loss=black_list[0])
         msg += f"\n第{i}种方案，{total}\n{MessageSegment.image(pic2b64(picture))}"
 
