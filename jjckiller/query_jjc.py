@@ -1,10 +1,8 @@
 import contextlib
 import json
-import os
 import time
 import traceback
 from math import log
-from os.path import exists
 from random import random
 from typing import List, Tuple, Union
 
@@ -14,7 +12,7 @@ from loguru import logger
 
 from ..setting import JJCSetting
 from ..util.tools import load_config, write_config
-from .base import id_list2str, id_str2list
+from .base import id_list2str
 from .pcrdapi import callPcrd
 
 all_seq = {
@@ -25,36 +23,39 @@ all_seq = {
 }
 
 
-buffer_path = str(JJCSetting.buff_path.value / "buffer.json")
+cache_dir = JJCSetting.buff_path.value
+buffer_path = cache_dir / "buffer.json"
 buffer = load_config(buffer_path)
-best_atk_records_path = str(JJCSetting.buff_path.value / "best_atk_records.json")
+if not isinstance(buffer, dict):
+    buffer = {}
+best_atk_records_path = cache_dir / "best_atk_records.json"
+best_atk_records = []
 
 
 @nonebot.on_startup
 async def update_record_start():
     global best_atk_records
-    if not exists(best_atk_records_path):
+    if cache_dir.is_dir() and not best_atk_records_path.is_file():
         update_record()
-    with open(best_atk_records_path, "r", encoding="utf-8") as fp:
-        best_atk_records = json.load(fp)
+    records = load_config(best_atk_records_path)
+    best_atk_records = records if isinstance(records, list) else []
 
 
 def update_record():
     buffer_region_cnt = [{}, {}, {}, {}, {}]  # 全服=1 b服=2 台服=3 日服=4
-    tot_file_cnt = len(os.listdir(buffer_path))
-    for filename in os.listdir(buffer_path):  # 我为什么不用buffer.json 我是猪鼻
-        if len(filename) != 26:
+    files = list(cache_dir.glob("*.json"))
+    for path in files:
+        if len(path.stem) not in (21, 31):
             continue
 
         try:
-            region = int(filename[-6])
+            region = int(path.stem[-1])
             if region == 1:  # 按理说全服查询可能出现任何角色，应该归入4
                 region = 2  # 但本bot 绝大多数的全服查询实际均为国服，因此归入国服。少数的其它服查询在频率排序后会被滤过。
             if region not in [1, 2, 3, 4]:
                 continue
 
-            filepath = str(JJCSetting.buff_path.value / filename)
-            with open(filepath, "r", encoding="utf-8") as fp:
+            with path.open(encoding="utf-8") as fp:
                 records = json.load(fp)
 
             for record in records:
@@ -73,34 +74,35 @@ def update_record():
         buffer_region_cnt[2].items(), key=lambda x: x[1], reverse=True
     )
     best_atk_records = [x[0] for x in best_atk_records_item[:200]]
-    with open(best_atk_records_path, "w", encoding="utf-8") as fp:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with best_atk_records_path.open("w", encoding="utf-8") as fp:
         json.dump(best_atk_records, fp, ensure_ascii=False, indent=4)
 
-    return f"从{tot_file_cnt}个文件中搜索到{len(buffer_region_cnt[2])}个进攻阵容（不计日台服查询）\n已缓存最频繁使用的{len(best_atk_records)}个阵容"
+    return f"从{len(files)}个文件中搜索到{len(buffer_region_cnt[2])}个进攻阵容（不计日台服查询）\n已缓存最频繁使用的{len(best_atk_records)}个阵容"
 
 
 async def find_approximate_team(id_list: List[int], region: int = 1):
-    if len(id_list) == 4:
-        id_list.append(1000)
-    logger.info(f"查询近似解：{sorted(id_list)}")
+    unit_ids = [unit // 100 for unit in id_list]
+    if len(unit_ids) == 4:
+        unit_ids.append(1000)
+    logger.info(f"查询近似解：{sorted(unit_ids)}")
+    requested = set(unit_ids)
     result = []
-    for buffer_id_str in buffer:  # "100110021018105211222"
-        if len(buffer_id_str) != 21:
+    for key in buffer:
+        if len(key) not in (21, 31) or key[-1] not in "12" or not key.isdecimal():
             continue
-        if buffer_id_str[-1] not in ["1", "2"]:
-            continue
-        # [1001, 1002, 1018, 1052, 1122]
-        if len(set(id_str2list(buffer_id_str)) & set(id_list)) >= 4:
-            pa = str(JJCSetting.buff_path.value / f"{buffer_id_str}.json")
-            if exists(pa):
-                result += load_config(pa)
-    if len(result) < 200 and 1000 in id_list:
+        width = (len(key) - 1) // 5
+        units = [int(key[i:i + width]) for i in range(0, len(key) - 1, width)]
+        if width == 6:
+            units = [unit // 100 for unit in units]
+        if len(set(units) & requested) >= 4:
+            result += load_config(cache_dir / f"{key}.json")
+    if len(result) < 200 and len(id_list) == 4:
         logger.info("近似解较少，尝试直接查询")
         with contextlib.suppress(Exception):
-            resp = await callPcrd(id_list[:-1], 1, region, 1)
-            result += resp
+            result += (await callPcrd(id_list, 1, region, 1)) or []
     logger.info(f"共有{len(result)}条记录")
-    render = result2render(result, "approximation", id_list)[:200]
+    render = result2render(result, "approximation", unit_ids)[:200]
     return list(sorted(render, key=lambda x: x.get("val", -100), reverse=True))[:10]
 
 
@@ -163,56 +165,58 @@ def caculateVal(record) -> float:
     return val_1 + val_2 + random() / 1000  # 阵容推荐度权值
 
 
+def _cached_result(prefixes, region):
+    for prefix in prefixes:
+        key = prefix + str(region)
+        if result := load_config(cache_dir / f"{key}.json"):
+            return result, buffer.get(key, 0)
+    return [], 0
+
+
 async def do_query(id_list: List[int], region: int = 1) -> Union[str, List[dict]]:
     if len(id_list) < 4:
         return ["lossunit"]
     if len(id_list) == 4:
         return await find_approximate_team(id_list, region)
 
-    key = id_list2str(id_list) + str(region)
-
+    prefix = id_list2str(sorted(unit // 100 for unit in id_list))
+    prefixes = (prefix, id_list2str(id_list), id_list2str(sorted(id_list)))
+    key = prefix + str(region)
     logger.info(f"查询阵容：{key}")
 
     now_time = time.time()
-    # 5天内查询过 直接返回
     result = None
-    degrade_result = None
-    key_path = str(JJCSetting.buff_path.value / f"{key}.json")
-    if degrade_result := load_config(key_path):
-        if now_time - buffer.get(key, 0) >= 3600 * 24 * 5:
-            logger.info(f"存在本服({region})远缓存，作为降级备用")
-        else:
-            logger.info(f"存在本服({region})近缓存，直接使用")
-            result = degrade_result
-    else:
-        logger.info(f"不存在本服({region})缓存，查找它服缓存")
+    degrade_result, cached_at = _cached_result(prefixes, region)
+    if degrade_result and now_time - cached_at < 3600 * 24 * 5:
+        logger.info(f"存在本服({region})近缓存，直接使用")
+        result = degrade_result
+    elif not degrade_result:
         for other_region in all_seq.get(region, []):
-            other_key = "".join([str(x) for x in sorted(id_list)]) + str(other_region)
-            if degrade_result := load_config(
-                str(JJCSetting.buff_path.value / f"{other_key}.json")
-            ):
+            degrade_result, _ = _cached_result(prefixes, other_region)
+            if degrade_result:
                 logger.info(f"存在它服({other_region})缓存，作为降级备用")
                 break
-        else:
-            logger.info("不存在它服缓存")
 
     if not result:
         try:
             result = await callPcrd(id_list, 1, region, 1)
-            logger.info(f"查询成功，共有{len(result)}条结果")
-            if not len(result):
-                raise
-
-            logger.info("保存结果至缓存库")
-            buffer[key] = int(now_time)
-            write_config(buffer_path, buffer)
-            write_config(str(JJCSetting.buff_path.value / f"{key}.json"), result)
         except Exception:
-            if not degrade_result:
-                logger.info("查询失败并且无缓存，查询近似解")
-                return await find_approximate_team(id_list, region)
+            result = None
+        if result:
+            logger.info(f"查询成功，共有{len(result)}条结果")
+            try:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                write_config(cache_dir / f"{key}.json", result)
+                buffer[key] = int(now_time)
+                write_config(buffer_path, buffer)
+            except OSError as error:
+                logger.warning(f"保存竞技场缓存失败：{error}")
+        elif degrade_result:
             logger.info("查询失败，使用缓存")
             result = degrade_result
+        else:
+            logger.info("查询失败并且无缓存，查询近似解")
+            return await find_approximate_team(id_list, region)
 
     render = result2render(result)
     if len(render) < 10:
@@ -224,9 +228,6 @@ async def do_query(id_list: List[int], region: int = 1) -> Union[str, List[dict]
                 if result1["atk"] == result2["atk"]:
                     approximate_result.pop(i)
         render += approximate_result
-
-    if not result:
-        remove_buffer(key)
 
     logger.info(f"共有{len(render)}条结果")
 
@@ -340,14 +341,6 @@ def recommend_team(
                     "team_type": "frequency",
                 }
     return tuple(result) if len(result) > 1 else result[0]
-
-
-def remove_buffer(uid: str):
-    with contextlib.suppress(Exception):
-        os.remove(JJCSetting.buff_path.value / f"{uid}.json")
-        del buffer[uid]
-        with open(buffer_path, "w", encoding="utf-8") as fp:
-            json.dump(buffer, fp, ensure_ascii=False, indent=4)
 
 
 async def generate_collision_free_team(all_query_records):
