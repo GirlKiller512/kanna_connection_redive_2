@@ -215,11 +215,11 @@ class TimaAxis:
                 if self.have_chara(x) >= 4 and self.have_chara(y) >= 4:
                     # 这两队中每队的5个角色要有4个
                     check = True
-                elif (
-                    self.same_chara(x, y) <= 2 and self.have_chara(x | y) >= 8
-                ):  # 有1~2个重复
-                    # 这两队中出现的角色要有8个
-                    check = True
+            elif (
+                self.same_chara(x, y) <= 2 and self.have_chara(x | y) >= 8
+            ):  # 有1~2个重复
+                # 这两队中出现的角色要有8个
+                check = True
 
         elif knife == 3:  # 剩3刀没出
             x, y, z = set(perm[0].unit), set(perm[1].unit), set(perm[2].unit)
