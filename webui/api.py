@@ -38,6 +38,7 @@ from ..database.models import (
 )
 from ..basedata import NoticeType, Platform
 from ..client import check_client, get_access_key, pcrclient, tw_pcrclient
+from ..client.apiclient import close_api_clients
 from ..login import query
 from ..support_query.util import (
     change_support_unit,
@@ -2440,4 +2441,7 @@ async def kanna_web():
         yield
     finally:
         server.should_exit = True
-        await task
+        try:
+            await task
+        finally:
+            await close_api_clients()
