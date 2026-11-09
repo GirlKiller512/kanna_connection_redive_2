@@ -149,6 +149,13 @@ CLIENT = httpx.AsyncClient(timeout=20)
 TW_CLIENT = httpx.AsyncClient(verify=False, timeout=20)
 
 
+async def close_api_clients():
+    try:
+        await CLIENT.aclose()
+    finally:
+        await TW_CLIENT.aclose()
+
+
 class BCRClient(BaseClient):
     def __init__(self, uid: str, access_key: str, platform: int):
         super().__init__()
