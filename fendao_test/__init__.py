@@ -110,9 +110,13 @@ async def query_timeaxis(bot: HoshinoBot, ev: CQEvent):
     content: str = ev.message.extract_plain_text().strip()
     msg = ""
 
-    if re.match(r"^[A-Za-z][A-Za-z]?\d{3}$", content):
-        work_id = content
-        result = clanbattle_work.get_work_by_id(content)
+    work_id = content.upper()
+    if re.fullmatch(r"[A-Z][A-Z]?\d{3}", work_id):
+        try:
+            result = clanbattle_work.get_work_by_id(work_id)
+        except KeyError:
+            await bot.send(ev, f"未找到轴{work_id}")
+            return
         info = result["info"]
         msg += f"{work_id[0]}面{work_id[-3]}王作业" + MessageSegment.image(
             pic2b64(
@@ -136,13 +140,12 @@ async def query_timeaxis(bot: HoshinoBot, ev: CQEvent):
     dao_type = "STW"
     boss = "12345"
 
-    args = content.split()
-    for arg in args:
-        if arg.upper() in stage_dict:
-            stage = arg
-        elif "".join(sorted(arg.upper())) in dao_type:  # 是否包含，先排序(忽略顺序)
+    for arg in content.upper().split():
+        if all(kind in "STW" for kind in arg):
             dao_type = arg
-        elif "".join(sorted(arg.upper())) in boss:
+        elif arg in stage_dict:
+            stage = arg
+        elif len(arg) <= 5 and all(number in "12345" for number in arg):
             boss = arg
         else:
             await bot.send(ev, "出现无效参数，爬爬")
@@ -493,20 +496,6 @@ async def get_proper_team(knife: int, box: set = None, boss=[1, 2, 3, 4, 5], sta
         return f'自动配刀：\n{team_outp}\n\n发送“查轴[轴号]”以获取链接等详细信息。例：查轴{battle_array[proper_team[0][0]]["sn"]}'
     else:
         return '无推荐配刀'
-
-
-@sv.on_prefix("查轴")
-async def get_timeline_detail_info(bot, ev):
-    from .clanbattle_timeaxis import get_timeaxis
-    battle_array = await get_timeaxis()
-    sn = ev.message.extract_plain_text().strip()
-    battle_array = list(filter(lambda x: x["sn"] == sn, battle_array))
-
-    if len(battle_array):
-        battle_array = battle_array[0]
-        await bot.send(ev, f'{battle_array["sn"]:<5s} {battle_array["damage"]:5d}w {" ".join([chara.fromid(unit).name for unit in battle_array["units"]])}' + '\n'.join([f'{video["text"]} {video["url"]}{(chr(10) + video["note"] + chr(10)) if len(video["note"]) else ""}' for video in battle_array["videos"]]))
-    else:
-        await bot.send(ev, f'未找到轴{sn}')
 
 
 async def _get_clan_battle_info(account_info, boss, stage, worktype) -> str:
